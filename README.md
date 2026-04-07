@@ -38,6 +38,7 @@ git clone https://github.com/jiezhu2007/noteAI.git
 cd noteAI
 npm install
 npm run dev
+npm run build
 ```
 
 ### 构建
