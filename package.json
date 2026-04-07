@@ -1,0 +1,74 @@
+{
+  "name": "noteai",
+  "version": "1.0.0",
+  "description": "NoteAI — 智能笔记与提醒一体化 macOS 应用",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"vite --port 5173 --strictPort\" \"npm run electron-dev\"",
+    "electron-dev": "wait-on -t 60000 http://localhost:5173 && cross-env NODE_ENV=development electron .",
+    "build": "tsc && vite build && electron-builder",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tiptap/core": "^2.4.0",
+    "@tiptap/extension-code-block-lowlight": "^2.4.0",
+    "@tiptap/extension-color": "^2.4.0",
+    "@tiptap/extension-highlight": "^2.4.0",
+    "@tiptap/extension-image": "^2.4.0",
+    "@tiptap/extension-link": "^2.4.0",
+    "@tiptap/extension-placeholder": "^2.4.0",
+    "@tiptap/extension-table": "^2.4.0",
+    "@tiptap/extension-table-cell": "^2.4.0",
+    "@tiptap/extension-table-header": "^2.4.0",
+    "@tiptap/extension-table-row": "^2.4.0",
+    "@tiptap/extension-task-item": "^2.4.0",
+    "@tiptap/extension-task-list": "^2.4.0",
+    "@tiptap/extension-text-style": "^2.4.0",
+    "@tiptap/extension-typography": "^2.4.0",
+    "@tiptap/extension-underline": "^2.4.0",
+    "@tiptap/pm": "^2.4.0",
+    "@tiptap/react": "^2.4.0",
+    "@tiptap/starter-kit": "^2.4.0",
+    "clsx": "^2.1.0",
+    "date-fns": "^3.6.0",
+    "lowlight": "^3.1.0",
+    "lucide-react": "^0.358.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "sql.js": "^1.12.0",
+    "uuid": "^9.0.0",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "@types/sql.js": "^1.4.11",
+    "@types/uuid": "^9.0.7",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.17",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^35.7.5",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.1.4",
+    "vite-plugin-electron": "^0.28.4",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.noteai.app",
+    "productName": "NoteAI",
+    "mac": {
+      "target": "dmg",
+      "minimumSystemVersion": "12.0"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "node_modules/sql.js/dist/sql-wasm.wasm"
+    ]
+  }
+}

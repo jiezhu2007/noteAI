@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+
+# macOS
+.DS_Store
+
+# Binary / personal files
+*.docx
+NoteAI开发过程总结.md
