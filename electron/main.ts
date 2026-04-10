@@ -1,9 +1,13 @@
-import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, shell, dialog } from 'electron'
 import path from 'path'
-import { initDB } from './services/db'
+import fs from 'fs'
+import { initDB, getNotes, createNote, updateNote, deleteNote, searchNotes, getAllNotesForSearch, getFolders, createFolder, updateFolder, deleteFolder, getTags, createTag, setNoteTags, getReminders, createReminder, updateReminder, deleteReminder, completeReminder, getReminderLists, createReminderList, getSetting, setSetting } from './services/db'
 import { fileStore } from './services/fileStore'
 import { aiService } from './services/ai'
 import { reminderService } from './services/reminder'
+import { pickFile, processFile } from './services/attachment'
+import { agentLoop, loadAgentConfig, saveAgentConfig } from './services/agentLoop'
+import { buildSystemPrompt } from './services/promptTemplates'
 
 // Fix: Chrome DevTools v127+ added Autofill CDP domain, but Electron 35 does not
 // implement it. Disabling the feature prevents DevTools from requesting methods
@@ -18,7 +22,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 900,
+    minWidth: 1100,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
@@ -76,32 +80,38 @@ app.on('window-all-closed', () => {
 // ─── IPC: Notes ──────────────────────────────────────────────────────────────
 
 ipcMain.handle('notes:getAll', async () => {
-  const { getNotes } = await import('./services/db')
   const notes = getNotes() as any[]
-  // 为每条笔记补充正文摘要预览（前80字符，去HTML标签）
-  return notes.map((note) => {
-    try {
-      const raw = fileStore.readNote(note.file_path)
-      const plain = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-      return { ...note, preview: plain.slice(0, 80) }
-    } catch {
-      return { ...note, preview: '' }
-    }
+  // 立即返回基础数据，不读磁盘
+  const baseNotes = notes.map((note) => ({ ...note, preview: '' }))
+
+  // 后台异步补充 preview（真正异步，不阻塞事件循环）
+  Promise.all(
+    notes.map(async (note) => {
+      try {
+        const raw = await fs.promises.readFile(note.file_path, 'utf-8')
+        const plain = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+        return [note.id, plain.slice(0, 80)] as [string, string]
+      } catch {
+        return [note.id, ''] as [string, string]
+      }
+    })
+  ).then((entries) => {
+    const previews: Record<string, string> = Object.fromEntries(entries)
+    mainWindow?.webContents.send('notes:previewsReady', previews)
   })
+
+  return baseNotes
 })
 
 ipcMain.handle('notes:create', async (_, data) => {
-  const { createNote } = await import('./services/db')
   return createNote(data)
 })
 
 ipcMain.handle('notes:update', async (_, id, data) => {
-  const { updateNote } = await import('./services/db')
   return updateNote(id, data)
 })
 
 ipcMain.handle('notes:delete', async (_, id) => {
-  const { deleteNote } = await import('./services/db')
   return deleteNote(id)
 })
 
@@ -114,7 +124,6 @@ ipcMain.handle('notes:saveContent', async (_, filePath, content) => {
 })
 
 ipcMain.handle('notes:search', async (_, query) => {
-  const { searchNotes, getAllNotesForSearch } = await import('./services/db')
   // 标题匹配
   const titleMatches = searchNotes(query) as any[]
   const matchedIds = new Set(titleMatches.map((n: any) => n.id))
@@ -142,82 +151,68 @@ ipcMain.handle('notes:search', async (_, query) => {
 // ─── IPC: Folders ─────────────────────────────────────────────────────────────
 
 ipcMain.handle('folders:getAll', async () => {
-  const { getFolders } = await import('./services/db')
   return getFolders()
 })
 
 ipcMain.handle('folders:create', async (_, data) => {
-  const { createFolder } = await import('./services/db')
   return createFolder(data)
 })
 
 ipcMain.handle('folders:update', async (_, id, data) => {
-  const { updateFolder } = await import('./services/db')
   return updateFolder(id, data)
 })
 
 ipcMain.handle('folders:delete', async (_, id) => {
-  const { deleteFolder } = await import('./services/db')
   return deleteFolder(id)
 })
 
 // ─── IPC: Tags ───────────────────────────────────────────────────────────────
 
 ipcMain.handle('tags:getAll', async () => {
-  const { getTags } = await import('./services/db')
   return getTags()
 })
 
 ipcMain.handle('tags:create', async (_, name, color) => {
-  const { createTag } = await import('./services/db')
   return createTag(name, color)
 })
 
 ipcMain.handle('tags:setNoteTags', async (_, noteId, tagIds) => {
-  const { setNoteTags } = await import('./services/db')
   return setNoteTags(noteId, tagIds)
 })
 
 // ─── IPC: Reminders ──────────────────────────────────────────────────────────
 
 ipcMain.handle('reminders:getAll', async () => {
-  const { getReminders } = await import('./services/db')
   return getReminders()
 })
 
 ipcMain.handle('reminders:create', async (_, data) => {
-  const { createReminder } = await import('./services/db')
   const reminder = createReminder(data)
   reminderService.scheduleReminder(reminder, mainWindow)
   return reminder
 })
 
 ipcMain.handle('reminders:update', async (_, id, data) => {
-  const { updateReminder } = await import('./services/db')
   const reminder = updateReminder(id, data)
   reminderService.scheduleReminder(reminder, mainWindow)
   return reminder
 })
 
 ipcMain.handle('reminders:delete', async (_, id) => {
-  const { deleteReminder } = await import('./services/db')
   reminderService.cancelReminder(id)
   return deleteReminder(id)
 })
 
 ipcMain.handle('reminders:complete', async (_, id) => {
-  const { completeReminder } = await import('./services/db')
   reminderService.cancelReminder(id)
   return completeReminder(id)
 })
 
 ipcMain.handle('reminders:getLists', async () => {
-  const { getReminderLists } = await import('./services/db')
   return getReminderLists()
 })
 
 ipcMain.handle('reminders:createList', async (_, data) => {
-  const { createReminderList } = await import('./services/db')
   return createReminderList(data)
 })
 
@@ -251,8 +246,162 @@ ipcMain.handle('ai:testConnection', async () => {
   return aiService.testConnection()
 })
 
+// ─── IPC: AI Chat (Streaming) ───────────────────────────────────────────────
+
+const activeStreams = new Map<string, AbortController>()
+
+ipcMain.handle('ai:chatStart', async (event, request) => {
+  const { sessionId, messages, noteContext, noteTitle, skillSystemPrompt } = request
+
+  const systemContent = buildSystemPrompt({ noteTitle, noteContext, skillSystemPrompt })
+
+  const fullMessages = [
+    { role: 'system', content: systemContent },
+    ...messages.map((m: any) => ({
+      role: m.role,
+      content: m.content,
+      ...(m.images && m.images.length > 0 ? { images: m.images } : {}),
+    })),
+  ]
+
+  const abortController = new AbortController()
+  activeStreams.set(sessionId, abortController)
+
+  const sender = event.sender
+
+  // Run streaming in background — return sessionId immediately
+  ;(async () => {
+    try {
+      await aiService.chatStream(
+        fullMessages,
+        (delta) => {
+          if (!sender.isDestroyed()) {
+            sender.send('ai:chatChunk', { sessionId, delta, done: false })
+          }
+        },
+        abortController.signal,
+      )
+      if (!sender.isDestroyed()) {
+        sender.send('ai:chatChunk', { sessionId, delta: '', done: true })
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        if (!sender.isDestroyed()) {
+          sender.send('ai:chatChunk', { sessionId, delta: '', done: true })
+        }
+      } else {
+        if (!sender.isDestroyed()) {
+          sender.send('ai:chatChunk', {
+            sessionId,
+            delta: '',
+            done: true,
+            error: err.message || 'AI 服务错误',
+          })
+        }
+      }
+    } finally {
+      activeStreams.delete(sessionId)
+    }
+  })()
+
+  return sessionId
+})
+
+ipcMain.handle('ai:chatStop', async (_, sessionId) => {
+  const controller = activeStreams.get(sessionId)
+  if (controller) {
+    controller.abort()
+    activeStreams.delete(sessionId)
+  }
+})
+
+// ─── IPC: AI Agent (Reflective) ────────────────────────────────────────────
+
+ipcMain.handle('ai:agentStart', async (event, request) => {
+  const { sessionId } = request
+
+  const abortController = new AbortController()
+  activeStreams.set(sessionId, abortController)
+
+  const sender = event.sender
+
+  ;(async () => {
+    try {
+      await agentLoop.run(
+        request,
+        (chunk) => {
+          if (!sender.isDestroyed()) {
+            sender.send('ai:agentChunk', chunk)
+          }
+        },
+        abortController.signal,
+      )
+    } catch (err: any) {
+      if (err.name !== 'AbortError' && !sender.isDestroyed()) {
+        sender.send('ai:agentChunk', {
+          sessionId,
+          phase: 'error',
+          iteration: 0,
+          maxIterations: 0,
+          error: err.message || 'Agent 运行错误',
+        })
+      }
+    } finally {
+      activeStreams.delete(sessionId)
+    }
+  })()
+
+  return sessionId
+})
+
+ipcMain.handle('ai:agentStop', async (_, sessionId) => {
+  const controller = activeStreams.get(sessionId)
+  if (controller) {
+    controller.abort()
+    activeStreams.delete(sessionId)
+  }
+})
+
+ipcMain.handle('ai:getAgentConfig', async () => {
+  return loadAgentConfig()
+})
+
+ipcMain.handle('ai:setAgentConfig', async (_, config) => {
+  const current = loadAgentConfig()
+  return saveAgentConfig({ ...current, ...config })
+})
+
+// ─── IPC: Attachments ────────────────────────────────────────────────────────
+
+ipcMain.handle('attachment:pick', async () => {
+  return pickFile()
+})
+
+ipcMain.handle('attachment:processPath', async (_, filePath: string) => {
+  try {
+    return await processFile(filePath)
+  } catch (e: any) {
+    return null
+  }
+})
+
 // ─── IPC: Shell ──────────────────────────────────────────────────────────────
 
 ipcMain.handle('shell:openPath', async (_, filePath) => {
   return shell.openPath(filePath)
+})
+
+// ─── IPC: Skills Config ──────────────────────────────────────────────────────
+
+ipcMain.handle('skills:getConfig', async () => {
+  const raw = getSetting('skills_config')
+  if (raw) {
+    try { return JSON.parse(raw) } catch { /* fall through */ }
+  }
+  return { disabledSkillIds: [], customSkills: [] }
+})
+
+ipcMain.handle('skills:setConfig', async (_, config) => {
+  setSetting('skills_config', JSON.stringify(config))
+  return config
 })

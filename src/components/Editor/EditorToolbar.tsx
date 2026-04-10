@@ -6,16 +6,14 @@ import {
   List, ListOrdered, CheckSquare,
   Quote, Code, Code2,
   Link, Image as ImageIcon,
-  Sparkles,
 } from 'lucide-react'
 import clsx from 'clsx'
 
 interface EditorToolbarProps {
   editor: Editor | null
-  onToggleAI: () => void
 }
 
-export function EditorToolbar({ editor, onToggleAI }: EditorToolbarProps) {
+export function EditorToolbar({ editor }: EditorToolbarProps) {
   const [showLinkInput, setShowLinkInput] = useState(false)
   const [linkUrl, setLinkUrl] = useState('')
 
@@ -170,19 +168,6 @@ export function EditorToolbar({ editor, onToggleAI }: EditorToolbarProps) {
             <ImageIcon size={14} />
           </ToolBtn>
         </ToolGroup>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* AI button */}
-        <button
-          onClick={onToggleAI}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-ai-500 hover:bg-ai-600 text-white transition-colors"
-          title="AI 助手"
-        >
-          <Sparkles size={13} />
-          AI
-        </button>
       </div>
 
       {/* Link input */}

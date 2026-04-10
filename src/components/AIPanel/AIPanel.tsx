@@ -1,166 +1,124 @@
-import { useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNotesStore } from '../../store/notesStore'
-import { Sparkles, X, Loader, Copy, ChevronDown, ChevronUp } from 'lucide-react'
-import clsx from 'clsx'
+import { useChatStore } from '../../store/chatStore'
+import { Sparkles, Trash2 } from 'lucide-react'
+import { ChatMessageBubble, StreamingBubble } from './ChatMessageBubble'
+import { ChatInput } from './ChatInput'
+import { SkillSelector } from './SkillSelector'
+import { AgentStatusBar } from './AgentStatusBar'
 
-interface AIPanelProps {
-  onClose: () => void
-}
-
-export function AIPanel({ onClose }: AIPanelProps) {
+export function AIPanel() {
   const { selectedNote, noteContent } = useNotesStore()
-  const [summary, setSummary] = useState<string>('')
-  const [keyPoints, setKeyPoints] = useState<string[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string>('')
-  const [pointsExpanded, setPointsExpanded] = useState(true)
+  const {
+    messages, isStreaming, streamingContent, error,
+    sendMessage, stopStreaming, clearChat,
+    agentEnabled, agentPhase, agentIteration, agentMaxIterations,
+    lastReflection, loadAgentEnabled,
+  } = useChatStore()
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const prevNoteIdRef = useRef<string | null>(null)
 
-  const handleGenerate = async () => {
-    if (!noteContent.trim()) {
-      setError('笔记内容为空，无法生成摘要')
-      return
-    }
-    setLoading(true)
-    setError('')
-    try {
-      // Strip HTML tags for AI input
-      const plainText = noteContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-      const result = await window.electronAPI.ai.summarize(plainText)
-      setSummary(result.summary)
-      setKeyPoints(result.keyPoints)
-    } catch (e: any) {
-      setError(e.message || 'AI 服务错误，请检查设置')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Load agent config on mount
+  useEffect(() => {
+    loadAgentEnabled()
+  }, [])
 
-  const handleExtractPoints = async () => {
-    if (!noteContent.trim()) return
-    setLoading(true)
-    setError('')
-    try {
-      const plainText = noteContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-      const points = await window.electronAPI.ai.extractPoints(plainText)
-      setKeyPoints(points)
-    } catch (e: any) {
-      setError(e.message || 'AI 服务错误')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, streamingContent, agentPhase])
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
+  // Clear chat when switching notes
+  useEffect(() => {
+    if (selectedNote?.id !== prevNoteIdRef.current) {
+      if (prevNoteIdRef.current !== null) {
+        clearChat()
+      }
+      prevNoteIdRef.current = selectedNote?.id ?? null
+    }
+  }, [selectedNote?.id])
+
+  const handleSend = (content: string, attachments?: import('../../types').ChatAttachment[]) => {
+    const plainText = noteContent
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    sendMessage(content, plainText || undefined, selectedNote?.title || undefined, attachments)
   }
 
   return (
-    <div className="w-[300px] flex-shrink-0 border-l border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
+    <div className="h-full flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-2">
           <Sparkles size={15} className="text-ai-500" />
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">AI 助手</span>
+          {agentEnabled && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-ai-500/10 text-ai-500 font-medium">
+              Agent
+            </span>
+          )}
         </div>
-        <button
-          onClick={onClose}
-          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400"
-        >
-          <X size={14} />
-        </button>
+        <div className="flex items-center gap-1">
+          {messages.length > 0 && (
+            <button
+              onClick={clearChat}
+              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400"
+              title="清空对话"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-2 p-3 border-b border-gray-100 dark:border-gray-800">
-        <button
-          onClick={handleGenerate}
-          disabled={loading}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-ai-500 hover:bg-ai-600 text-white text-xs font-medium transition-colors disabled:opacity-50"
-        >
-          {loading ? <Loader size={12} className="animate-spin" /> : <Sparkles size={12} />}
-          生成摘要
-        </button>
-        <button
-          onClick={handleExtractPoints}
-          disabled={loading}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium transition-colors disabled:opacity-50"
-        >
-          提取要点
-        </button>
-      </div>
+      {/* Skill Selector */}
+      <SkillSelector />
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-4">
-        {error && (
-          <div className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
-            {error}
-          </div>
-        )}
-
-        {!summary && !keyPoints.length && !error && !loading && (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-400 dark:text-gray-600 gap-3 text-center">
-            <Sparkles size={28} strokeWidth={1} />
-            <p className="text-xs">点击"生成摘要"让 AI 分析当前笔记</p>
-          </div>
-        )}
-
-        {loading && (
-          <div className="flex flex-col items-center justify-center py-12 gap-3 text-gray-400 dark:text-gray-600">
-            <Loader size={24} className="animate-spin text-ai-500" />
-            <p className="text-xs">AI 正在分析笔记…</p>
-          </div>
-        )}
-
-        {summary && !loading && (
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800">
-              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">摘要</span>
-              <button
-                onClick={() => copyToClipboard(summary)}
-                className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400"
-              >
-                <Copy size={11} />
-              </button>
-            </div>
-            <p className="text-xs text-gray-700 dark:text-gray-300 p-3 leading-relaxed">
-              {summary}
+      {/* Chat Messages */}
+      <div className="flex-1 overflow-y-auto p-3">
+        {messages.length === 0 && !isStreaming && (
+          <div className="flex flex-col items-center justify-center py-8 text-gray-400 dark:text-gray-600 gap-2 text-center">
+            <Sparkles size={24} strokeWidth={1} />
+            <p className="text-xs">输入消息与 AI 对话</p>
+            <p className="text-[10px]">
+              {agentEnabled ? 'Agent 模式已开启，AI 会自动反思和改进回答' : 'AI 可以感知当前笔记内容'}
             </p>
           </div>
         )}
 
-        {keyPoints.length > 0 && !loading && (
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <button
-              className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              onClick={() => setPointsExpanded((v) => !v)}
-            >
-              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                关键要点 ({keyPoints.length})
-              </span>
-              {pointsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            </button>
-            {pointsExpanded && (
-              <ul className="p-3 space-y-1.5">
-                {keyPoints.map((point, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-gray-700 dark:text-gray-300">
-                    <span className="text-ai-500 font-bold flex-shrink-0 mt-0.5">{i + 1}.</span>
-                    <span className="leading-relaxed">{point}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="px-3 pb-3">
-              <button
-                onClick={() => copyToClipboard(keyPoints.map((p, i) => `${i + 1}. ${p}`).join('\n'))}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <Copy size={11} />
-                复制全部
-              </button>
-            </div>
+        {messages.map((msg) => (
+          <ChatMessageBubble key={msg.id} message={msg} />
+        ))}
+
+        {/* Agent Status Bar */}
+        {isStreaming && agentEnabled && agentPhase && agentPhase !== 'act' && (
+          <AgentStatusBar
+            phase={agentPhase}
+            iteration={agentIteration}
+            maxIterations={agentMaxIterations}
+            score={lastReflection?.weightedScore}
+          />
+        )}
+
+        {isStreaming && <StreamingBubble content={streamingContent} />}
+
+        {error && (
+          <div className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5 mb-3">
+            {error}
           </div>
         )}
+
+        <div ref={messagesEndRef} />
       </div>
+
+      {/* Chat Input */}
+      <ChatInput
+        onSend={handleSend}
+        onStop={stopStreaming}
+        isStreaming={isStreaming}
+        disabled={!selectedNote}
+      />
     </div>
   )
 }

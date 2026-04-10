@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
-import { Sun, Moon, Monitor, Server, Key, CheckCircle2, XCircle, Loader } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Sun, Moon, Monitor, Server, Key, CheckCircle2, XCircle, Loader, Brain } from 'lucide-react'
 import clsx from 'clsx'
-import type { AIConfig } from '../types'
+import type { AIConfig, AgentConfig } from '../types'
+import { DEFAULT_AGENT_CONFIG } from '../types'
 
 interface SettingsPageProps {
   theme: 'light' | 'dark' | 'system'
@@ -10,12 +11,22 @@ interface SettingsPageProps {
 
 export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
   const [aiConfig, setAiConfig] = useState<AIConfig | null>(null)
+  const [agentConfig, setAgentConfig] = useState<AgentConfig>(DEFAULT_AGENT_CONFIG)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  const agentConfigSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const saveAgentConfigDebounced = useCallback((next: AgentConfig) => {
+    if (agentConfigSaveTimer.current) clearTimeout(agentConfigSaveTimer.current)
+    agentConfigSaveTimer.current = setTimeout(() => {
+      window.electronAPI.ai.setAgentConfig(next)
+    }, 500)
+  }, [])
 
   useEffect(() => {
     window.electronAPI.ai.getConfig().then(setAiConfig)
+    window.electronAPI.ai.getAgentConfig().then(setAgentConfig).catch(() => {})
   }, [])
 
   const handleSaveAI = async () => {
@@ -44,7 +55,7 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 h-full overflow-y-auto">
       <div className="max-w-2xl mx-auto py-10 px-8 space-y-8">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">设置</h1>
 
@@ -212,6 +223,186 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
               </button>
             </div>
           )}
+        </Section>
+
+        {/* AI Reflection / Agent Config */}
+        <Section title="AI 反思">
+          <div className="space-y-4">
+            {/* Enable toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>启用反思</Label>
+                <p className="text-xs text-gray-400 dark:text-gray-600 mt-0.5">
+                  开启后 AI 会自动评估并改进回答质量
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  const next = { ...agentConfig, enabled: !agentConfig.enabled }
+                  setAgentConfig(next)
+                  window.electronAPI.ai.setAgentConfig(next)
+                }}
+                className={clsx(
+                  'relative w-11 h-6 rounded-full transition-colors',
+                  agentConfig.enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'
+                )}
+              >
+                <span
+                  className={clsx(
+                    'absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform',
+                    agentConfig.enabled && 'translate-x-5'
+                  )}
+                />
+              </button>
+            </div>
+
+            {agentConfig.enabled && (
+              <>
+                {/* Reflection level */}
+                <div>
+                  <Label>反思级别</Label>
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    {([
+                      { value: -1, label: '自动' },
+                      { value: 1, label: '轻量' },
+                      { value: 2, label: '标准' },
+                      { value: 3, label: '深度' },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          const isAuto = opt.value === -1
+                          const next = {
+                            ...agentConfig,
+                            autoClassify: isAuto,
+                            defaultLevel: isAuto ? agentConfig.defaultLevel : (opt.value as 1 | 2 | 3),
+                          }
+                          setAgentConfig(next)
+                          window.electronAPI.ai.setAgentConfig(next)
+                        }}
+                        className={clsx(
+                          'px-3 py-1.5 rounded-lg text-sm border transition-colors',
+                          (opt.value === -1 ? agentConfig.autoClassify : !agentConfig.autoClassify && agentConfig.defaultLevel === opt.value)
+                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-600'
+                            : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pass threshold slider */}
+                <div>
+                  <Label>通过阈值</Label>
+                  <div className="flex items-center gap-3 mt-2">
+                    <input
+                      type="range"
+                      min="5"
+                      max="9"
+                      step="0.5"
+                      value={agentConfig.passThreshold}
+                      onChange={(e) => {
+                        const next = { ...agentConfig, passThreshold: parseFloat(e.target.value) }
+                        setAgentConfig(next)
+                        saveAgentConfigDebounced(next)
+                      }}
+                      className="flex-1 accent-primary-500"
+                    />
+                    <span className="text-sm font-mono text-gray-600 dark:text-gray-400 w-8 text-right">
+                      {agentConfig.passThreshold}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Token budget */}
+                <div>
+                  <Label>Token 预算</Label>
+                  <div className="flex items-center gap-3 mt-2">
+                    <input
+                      type="range"
+                      min="1024"
+                      max="65536"
+                      step="1024"
+                      value={agentConfig.maxTokenBudget}
+                      onChange={(e) => {
+                        const next = { ...agentConfig, maxTokenBudget: parseInt(e.target.value) }
+                        setAgentConfig(next)
+                        saveAgentConfigDebounced(next)
+                      }}
+                      className="flex-1 accent-primary-500"
+                    />
+                    <span className="text-sm font-mono text-gray-600 dark:text-gray-400 w-12 text-right">
+                      {agentConfig.maxTokenBudget > 1000
+                        ? `${(agentConfig.maxTokenBudget / 1024).toFixed(0)}K`
+                        : agentConfig.maxTokenBudget}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Reflect threshold */}
+                <div>
+                  <Label>自动继续阈值</Label>
+                  <p className="text-xs text-gray-400 dark:text-gray-600 mt-0.5 mb-2">
+                    反思得分低于此值时，自动追加反思轮次继续完善答案
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="5"
+                      max="9"
+                      step="0.5"
+                      value={agentConfig.reflectThreshold ?? 7.0}
+                      onChange={(e) => {
+                        const next = { ...agentConfig, reflectThreshold: parseFloat(e.target.value) }
+                        setAgentConfig(next)
+                        saveAgentConfigDebounced(next)
+                      }}
+                      className="flex-1 accent-primary-500"
+                    />
+                    <span className="text-sm font-mono text-gray-600 dark:text-gray-400 w-8 text-right">
+                      {agentConfig.reflectThreshold ?? 7.0}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Max reflect extra */}
+                <div>
+                  <Label>最大追加轮次</Label>
+                  <p className="text-xs text-gray-400 dark:text-gray-600 mt-0.5 mb-2">
+                    任务未完成时最多自动追加几轮反思（0 = 不自动追加）
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="0"
+                      max="4"
+                      step="1"
+                      value={agentConfig.maxReflectExtra ?? 2}
+                      onChange={(e) => {
+                        const next = { ...agentConfig, maxReflectExtra: parseInt(e.target.value) }
+                        setAgentConfig(next)
+                        saveAgentConfigDebounced(next)
+                      }}
+                      className="flex-1 accent-primary-500"
+                    />
+                    <span className="text-sm font-mono text-gray-600 dark:text-gray-400 w-8 text-right">
+                      {agentConfig.maxReflectExtra ?? 2}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 text-xs text-gray-400 dark:text-gray-600 bg-gray-50 dark:bg-gray-800/50 rounded-lg p-2.5">
+                  <Brain size={14} className="shrink-0 mt-0.5" />
+                  <div>
+                    <p>反思功能会增加约 1.5-4.6 倍 Token 消耗和延迟。</p>
+                    <p className="mt-0.5">Ollama 本地小模型（&lt; 7B）建议关闭反思以获得更好体验。</p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </Section>
 
         {/* About */}

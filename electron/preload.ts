@@ -4,8 +4,10 @@ const api = {
   // Notes
   notes: {
     getAll: () => ipcRenderer.invoke('notes:getAll'),
-    create: (data: any) => ipcRenderer.invoke('notes:create', data),
-    update: (id: string, data: any) => ipcRenderer.invoke('notes:update', id, data),
+    create: (data: { title?: string; folderId?: string }) =>
+      ipcRenderer.invoke('notes:create', data),
+    update: (id: string, data: Partial<{ title: string; folderId: string | null; isPinned: boolean; isArchived: boolean; isDeleted: boolean }>) =>
+      ipcRenderer.invoke('notes:update', id, data),
     delete: (id: string) => ipcRenderer.invoke('notes:delete', id),
     getContent: (filePath: string) => ipcRenderer.invoke('notes:getContent', filePath),
     saveContent: (filePath: string, content: string) =>
@@ -16,8 +18,10 @@ const api = {
   // Folders
   folders: {
     getAll: () => ipcRenderer.invoke('folders:getAll'),
-    create: (data: any) => ipcRenderer.invoke('folders:create', data),
-    update: (id: string, data: any) => ipcRenderer.invoke('folders:update', id, data),
+    create: (data: { name: string; parentId?: string }) =>
+      ipcRenderer.invoke('folders:create', data),
+    update: (id: string, data: Partial<{ name: string; parentId: string; sortOrder: number }>) =>
+      ipcRenderer.invoke('folders:update', id, data),
     delete: (id: string) => ipcRenderer.invoke('folders:delete', id),
   },
 
@@ -32,12 +36,15 @@ const api = {
   // Reminders
   reminders: {
     getAll: () => ipcRenderer.invoke('reminders:getAll'),
-    create: (data: any) => ipcRenderer.invoke('reminders:create', data),
-    update: (id: string, data: any) => ipcRenderer.invoke('reminders:update', id, data),
+    create: (data: { title: string; notes?: string; dueDate?: number; priority?: number; repeatRule?: string; listId?: string; linkedNoteId?: string }) =>
+      ipcRenderer.invoke('reminders:create', data),
+    update: (id: string, data: Partial<{ title: string; notes: string | null; dueDate: number | null; priority: number; repeatRule: string | null; listId: string | null; linkedNoteId: string | null; isCompleted: boolean; completedAt: number | null }>) =>
+      ipcRenderer.invoke('reminders:update', id, data),
     delete: (id: string) => ipcRenderer.invoke('reminders:delete', id),
     complete: (id: string) => ipcRenderer.invoke('reminders:complete', id),
     getLists: () => ipcRenderer.invoke('reminders:getLists'),
-    createList: (data: any) => ipcRenderer.invoke('reminders:createList', data),
+    createList: (data: { name: string; color?: string }) =>
+      ipcRenderer.invoke('reminders:createList', data),
   },
 
   // AI
@@ -47,16 +54,41 @@ const api = {
     parseReminder: (text: string) => ipcRenderer.invoke('ai:parseReminder', text),
     autocomplete: (context: string) => ipcRenderer.invoke('ai:autocomplete', context),
     getConfig: () => ipcRenderer.invoke('ai:getConfig'),
-    setConfig: (config: any) => ipcRenderer.invoke('ai:setConfig', config),
+    setConfig: (config: Partial<{ provider: string; ollamaBaseUrl: string; ollamaModel: string; claudeApiKey: string; openaiApiKey: string; openaiModel: string; customBaseUrl: string; customToken: string; customModel: string }>) =>
+      ipcRenderer.invoke('ai:setConfig', config),
     testConnection: () => ipcRenderer.invoke('ai:testConnection'),
+    chatStart: (request: { sessionId: string; messages: unknown[]; noteContext?: string; noteTitle?: string; skillSystemPrompt?: string }) =>
+      ipcRenderer.invoke('ai:chatStart', request),
+    chatStop: (sessionId: string) => ipcRenderer.invoke('ai:chatStop', sessionId),
+    agentStart: (request: { sessionId: string; messages: unknown[]; noteContext?: string; noteTitle?: string; skillSystemPrompt?: string; skillReflectionCriteria?: unknown }) =>
+      ipcRenderer.invoke('ai:agentStart', request),
+    agentStop: (sessionId: string) => ipcRenderer.invoke('ai:agentStop', sessionId),
+    getAgentConfig: () => ipcRenderer.invoke('ai:getAgentConfig'),
+    setAgentConfig: (config: Partial<{ enabled: boolean; autoClassify: boolean; defaultLevel: number; passThreshold: number; maxTokenBudget: number }>) =>
+      ipcRenderer.invoke('ai:setAgentConfig', config),
+  },
+
+  // Attachments
+  attachments: {
+    pick: () => ipcRenderer.invoke('attachment:pick'),
+    processPath: (filePath: string) => ipcRenderer.invoke('attachment:processPath', filePath),
+  },
+
+  // Skills
+  skills: {
+    getConfig: () => ipcRenderer.invoke('skills:getConfig'),
+    setConfig: (config: { disabledSkillIds: string[]; customSkills: unknown[] }) =>
+      ipcRenderer.invoke('skills:setConfig', config),
   },
 
   // Events from main process
-  on: (channel: string, callback: (...args: any[]) => void) => {
-    ipcRenderer.on(channel, (_event, ...args) => callback(...args))
+  on: (channel: string, callback: (...args: unknown[]) => void) => {
+    const wrapper = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => callback(...args)
+    ipcRenderer.on(channel, wrapper)
+    return wrapper
   },
-  off: (channel: string, callback: (...args: any[]) => void) => {
-    ipcRenderer.removeListener(channel, callback)
+  off: (channel: string, wrapper: (...args: unknown[]) => void) => {
+    ipcRenderer.removeListener(channel, wrapper as any)
   },
 }
 

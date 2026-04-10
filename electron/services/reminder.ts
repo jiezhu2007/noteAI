@@ -93,15 +93,12 @@ class ReminderService {
         silent: false,
       })
       notification.on('click', () => {
-        if (win) {
-          win.show()
-          win.webContents.send('reminder:fired', reminder.id)
-        }
+        if (win) win.show()
       })
       notification.show()
     }
 
-    // Also notify the renderer
+    // Notify the renderer once when the reminder fires
     if (win) {
       win.webContents.send('reminder:fired', reminder.id)
     }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNotesStore } from '../../store/notesStore'
 import { FolderOpen, Folder, Plus, Trash2, ChevronRight, ChevronDown, Tag } from 'lucide-react'
 import clsx from 'clsx'
@@ -28,7 +28,20 @@ export function Sidebar() {
     setAddingFolder(false)
   }
 
-  const allNotesCount = notes.filter((n) => !n.is_deleted && !n.is_archived).length
+  const allNotesCount = useMemo(
+    () => notes.filter((n) => !n.is_deleted && !n.is_archived).length,
+    [notes],
+  )
+
+  const folderNoteCountMap = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const n of notes) {
+      if (!n.is_deleted && n.folder_id) {
+        map[n.folder_id] = (map[n.folder_id] ?? 0) + 1
+      }
+    }
+    return map
+  }, [notes])
 
   return (
     <div className="w-[220px] flex-shrink-0 h-full border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex flex-col overflow-hidden">
@@ -83,7 +96,7 @@ export function Sidebar() {
               onToggleExpand={toggleExpand}
               onSelect={selectFolder}
               onDelete={deleteFolder}
-              noteCount={notes.filter((n) => n.folder_id === folder.id && !n.is_deleted).length}
+              noteCount={folderNoteCountMap[folder.id] ?? 0}
             />
           ))}
         </div>
@@ -157,6 +170,17 @@ function FolderItem({
   const isExpanded = expanded.has(folder.id)
   const isActive = selectedFolderId === folder.id
 
+  // 子文件夹笔记数：单次 O(n) 预计算，避免每个子项重复过滤
+  const childNoteCountMap = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const n of allNotes) {
+      if (!n.is_deleted && n.folder_id) {
+        map[n.folder_id] = (map[n.folder_id] ?? 0) + 1
+      }
+    }
+    return map
+  }, [allNotes])
+
   return (
     <div>
       <div
@@ -210,7 +234,7 @@ function FolderItem({
               onToggleExpand={onToggleExpand}
               onSelect={onSelect}
               onDelete={onDelete}
-              noteCount={allNotes.filter((n) => n.folder_id === child.id && !n.is_deleted).length}
+              noteCount={childNoteCountMap[child.id] ?? 0}
             />
           ))}
         </div>

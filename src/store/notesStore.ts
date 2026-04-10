@@ -10,8 +10,8 @@ interface NotesState {
   selectedNote: Note | null
   noteContent: string
   isSaving: boolean
-  saveTimer: ReturnType<typeof setTimeout> | null
   isLoading: boolean
+  forceEditorSync: number
 
   // Actions
   loadFolders: () => Promise<void>
@@ -32,6 +32,30 @@ interface NotesState {
   createFolder: (name: string, parentId?: string) => Promise<Folder>
   deleteFolder: (id: string) => Promise<void>
   filteredNotes: () => Note[]
+  applyAIContent: (content: string, mode: 'replace' | 'insert') => void
+}
+
+// saveTimer 是副作用状态，不应纳入响应式 Zustand store
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * 通用 debounce 保存逻辑，避免在 updateNoteContent 和 applyAIContent 中重复。
+ */
+function scheduleSave(content: string, delay: number, getStore: () => NotesState) {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(async () => {
+    const { selectedNote } = getStore()
+    if (!selectedNote) return
+    useNotesStore.setState({ isSaving: true })
+    await window.electronAPI.notes.saveContent(selectedNote.file_path, content)
+    await window.electronAPI.notes.update(selectedNote.id, {})
+    const now = Date.now()
+    useNotesStore.setState((s) => ({
+      notes: s.notes.map((n) => (n.id === selectedNote.id ? { ...n, updated_at: now } : n)),
+      isSaving: false,
+    }))
+    saveTimer = null
+  }, delay)
 }
 
 export const useNotesStore = create<NotesState>((set, get) => ({
@@ -43,8 +67,8 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   selectedNote: null,
   noteContent: '',
   isSaving: false,
-  saveTimer: null,
   isLoading: false,
+  forceEditorSync: 0,
   selectedNoteIds: [],
 
   loadFolders: async () => {
@@ -54,7 +78,19 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
   loadNotes: async () => {
     const notes = await window.electronAPI.notes.getAll()
-    set({ notes })
+    set({ notes })   // 立即渲染基础列表
+
+    // 监听 preview 补丁，合并后自动解绑（wrapper 由 on() 返回，确保 off 能正确移除）
+    let wrapper: ((...args: unknown[]) => void) | null = null
+    const handler = (previews: Record<string, string>) => {
+      useNotesStore.setState((s) => ({
+        notes: s.notes.map((n) =>
+          previews[n.id] !== undefined ? { ...n, preview: previews[n.id] } : n
+        ),
+      }))
+      if (wrapper) window.electronAPI.off('notes:previewsReady', wrapper)
+    }
+    wrapper = window.electronAPI.on('notes:previewsReady', handler) as (...args: unknown[]) => void
   },
 
   loadTags: async () => {
@@ -100,31 +136,9 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   },
 
   updateNoteContent: (content) => {
-    const { saveTimer } = get()
-    if (saveTimer) clearTimeout(saveTimer)
-
     set({ noteContent: content, isSaving: false })
-
-    const { selectedNote } = get()
-    if (!selectedNote) return
-
-    const timer = setTimeout(async () => {
-      const { selectedNote: latestNote } = get()
-      if (!latestNote) return
-      set({ isSaving: true })
-      await window.electronAPI.notes.saveContent(latestNote.file_path, content)
-      const now = Date.now()
-      await window.electronAPI.notes.update(latestNote.id, {})
-      set((s) => ({
-        notes: s.notes.map((n) =>
-          n.id === latestNote.id ? { ...n, updated_at: now } : n
-        ),
-        isSaving: false,
-        saveTimer: null,
-      }))
-    }, 1000)
-
-    set({ saveTimer: timer })
+    if (!get().selectedNote) return
+    scheduleSave(content, 1000, get)
   },
 
   deleteNote: async (id) => {
@@ -196,5 +210,16 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     const { notes, selectedFolderId } = get()
     if (!selectedFolderId) return notes
     return notes.filter((n) => n.folder_id === selectedFolderId)
+  },
+
+  applyAIContent: (content, mode) => {
+    const { noteContent, selectedNote } = get()
+    if (!selectedNote) return
+    const newContent = mode === 'replace' ? content : noteContent + content
+    set((s) => ({
+      noteContent: newContent,
+      forceEditorSync: s.forceEditorSync + 1,
+    }))
+    scheduleSave(newContent, 500, get)
   },
 }))

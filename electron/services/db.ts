@@ -205,6 +205,28 @@ function seedDefaultData(): void {
 
 // ─── Folders ──────────────────────────────────────────────────────────────────
 
+/**
+ * 通用动态 SET 子句构建器，消除 updateFolder/updateNote/updateReminder 中的重复模式。
+ * 返回 { sql, vals } 供 stmtRun 使用。
+ */
+function buildUpdateSql(
+  table: string,
+  id: string,
+  fields: Record<string, unknown>,
+): { sql: string; vals: unknown[] } {
+  const now = Date.now()
+  const sets: string[] = ['updated_at = ?']
+  const vals: unknown[] = [now]
+  for (const [col, val] of Object.entries(fields)) {
+    if (val !== undefined) {
+      sets.push(`${col} = ?`)
+      vals.push(val)
+    }
+  }
+  vals.push(id)
+  return { sql: `UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`, vals }
+}
+
 export function getFolders() {
   return stmtAll('SELECT * FROM folders ORDER BY sort_order, name')
 }
@@ -224,14 +246,12 @@ export function updateFolder(
   id: string,
   data: Partial<{ name: string; parentId: string; sortOrder: number }>
 ) {
-  const now = Date.now()
-  const sets: string[] = ['updated_at = ?']
-  const vals: any[] = [now]
-  if (data.name !== undefined) { sets.push('name = ?'); vals.push(data.name) }
-  if (data.parentId !== undefined) { sets.push('parent_id = ?'); vals.push(data.parentId) }
-  if (data.sortOrder !== undefined) { sets.push('sort_order = ?'); vals.push(data.sortOrder) }
-  vals.push(id)
-  stmtRun(`UPDATE folders SET ${sets.join(', ')} WHERE id = ?`, ...vals)
+  const fields: Record<string, unknown> = {}
+  if (data.name !== undefined) fields['name'] = data.name
+  if (data.parentId !== undefined) fields['parent_id'] = data.parentId
+  if (data.sortOrder !== undefined) fields['sort_order'] = data.sortOrder
+  const { sql, vals } = buildUpdateSql('folders', id, fields)
+  stmtRun(sql, ...vals)
   return stmtGet('SELECT * FROM folders WHERE id = ?', id)
 }
 
@@ -289,19 +309,17 @@ export function updateNote(
   }>
 ) {
   const now = Date.now()
-  const sets: string[] = ['updated_at = ?']
-  const vals: any[] = [now]
-  if (data.title !== undefined) { sets.push('title = ?'); vals.push(data.title) }
-  if (data.folderId !== undefined) { sets.push('folder_id = ?'); vals.push(data.folderId) }
-  if (data.isPinned !== undefined) { sets.push('is_pinned = ?'); vals.push(data.isPinned ? 1 : 0) }
-  if (data.isArchived !== undefined) { sets.push('is_archived = ?'); vals.push(data.isArchived ? 1 : 0) }
+  const fields: Record<string, unknown> = {}
+  if (data.title !== undefined) fields['title'] = data.title
+  if (data.folderId !== undefined) fields['folder_id'] = data.folderId
+  if (data.isPinned !== undefined) fields['is_pinned'] = data.isPinned ? 1 : 0
+  if (data.isArchived !== undefined) fields['is_archived'] = data.isArchived ? 1 : 0
   if (data.isDeleted !== undefined) {
-    sets.push('is_deleted = ?')
-    vals.push(data.isDeleted ? 1 : 0)
-    if (data.isDeleted) { sets.push('deleted_at = ?'); vals.push(now) }
+    fields['is_deleted'] = data.isDeleted ? 1 : 0
+    if (data.isDeleted) fields['deleted_at'] = now
   }
-  vals.push(id)
-  stmtRun(`UPDATE notes SET ${sets.join(', ')} WHERE id = ?`, ...vals)
+  const { sql, vals } = buildUpdateSql('notes', id, fields)
+  stmtRun(sql, ...vals)
   return stmtGet('SELECT * FROM notes WHERE id = ?', id)
 }
 
@@ -384,11 +402,21 @@ export function createReminder(data: {
   return stmtGet('SELECT * FROM reminders WHERE id = ?', id)
 }
 
-export function updateReminder(id: string, data: any) {
-  const now = Date.now()
-  const sets: string[] = ['updated_at = ?']
-  const vals: any[] = [now]
-  const fields: Record<string, string> = {
+export function updateReminder(
+  id: string,
+  data: Partial<{
+    title: string
+    notes: string | null
+    dueDate: number | null
+    priority: number
+    repeatRule: string | null
+    listId: string | null
+    linkedNoteId: string | null
+    isCompleted: boolean | number
+    completedAt: number | null
+  }>
+) {
+  const colMap: Record<string, string> = {
     title: 'title',
     notes: 'notes',
     dueDate: 'due_date',
@@ -399,11 +427,14 @@ export function updateReminder(id: string, data: any) {
     isCompleted: 'is_completed',
     completedAt: 'completed_at',
   }
-  for (const [key, col] of Object.entries(fields)) {
-    if (data[key] !== undefined) { sets.push(`${col} = ?`); vals.push(data[key]) }
+  const fields: Record<string, unknown> = {}
+  for (const [key, col] of Object.entries(colMap)) {
+    if ((data as Record<string, unknown>)[key] !== undefined) {
+      fields[col] = (data as Record<string, unknown>)[key]
+    }
   }
-  vals.push(id)
-  stmtRun(`UPDATE reminders SET ${sets.join(', ')} WHERE id = ?`, ...vals)
+  const { sql, vals } = buildUpdateSql('reminders', id, fields)
+  stmtRun(sql, ...vals)
   return stmtGet('SELECT * FROM reminders WHERE id = ?', id)
 }
 

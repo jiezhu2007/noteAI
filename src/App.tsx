@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react'
 import { NotesPage } from './pages/Notes'
 import { RemindersPage } from './pages/Reminders'
 import { SettingsPage } from './pages/Settings'
+import { SkillsPage } from './pages/Skills'
 import { SearchModal } from './components/SearchModal/SearchModal'
 import { useNotesStore } from './store/notesStore'
 import { useRemindersStore } from './store/remindersStore'
-import { StickyNote, Bell, Settings } from 'lucide-react'
+import { useSkillStore } from './store/skillStore'
+import { StickyNote, Bell, Settings, Puzzle } from 'lucide-react'
 import clsx from 'clsx'
 
-type Page = 'notes' | 'reminders' | 'settings'
+type Page = 'notes' | 'reminders' | 'skills' | 'settings'
 
 export default function App() {
   const [page, setPage] = useState<Page>('notes')
@@ -38,6 +40,7 @@ export default function App() {
     loadTags()
     loadReminders()
     loadLists()
+    useSkillStore.getState().loadSkills()
   }, [])
 
   // Listen for reminder:fired events from main process
@@ -45,8 +48,8 @@ export default function App() {
     const handler = (id: string) => {
       markFired(id)
     }
-    window.electronAPI.on('reminder:fired', handler)
-    return () => window.electronAPI.off('reminder:fired', handler)
+    const wrapper = window.electronAPI.on('reminder:fired', handler)
+    return () => window.electronAPI.off('reminder:fired', wrapper)
   }, [])
 
   // Global keyboard shortcuts
@@ -65,11 +68,16 @@ export default function App() {
     <div className="flex flex-col h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       {/* Titlebar */}
       <div className="drag-region flex items-center h-11 px-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex-shrink-0">
-        {/* Traffic light placeholder */}
-        <div className="w-16 flex-shrink-0" />
+        {/* Traffic light placeholder + Brand */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="w-16 flex-shrink-0" />
+          <span className="no-drag text-sm font-bold text-gray-700 dark:text-gray-200 select-none">NoteAI</span>
+        </div>
 
-        {/* Nav tabs */}
-        <div className="no-drag flex items-center gap-1 mx-auto">
+        <div className="flex-1" />
+
+        {/* Nav actions */}
+        <div className="no-drag flex items-center gap-1">
           <NavTab
             active={page === 'notes'}
             icon={<StickyNote size={15} />}
@@ -82,10 +90,12 @@ export default function App() {
             label="提醒"
             onClick={() => setPage('reminders')}
           />
-        </div>
-
-        {/* Right actions */}
-        <div className="no-drag flex items-center gap-2 w-16 justify-end">
+          <NavTab
+            active={page === 'skills'}
+            icon={<Puzzle size={15} />}
+            label="技能"
+            onClick={() => setPage('skills')}
+          />
           <button
             onClick={() => setPage('settings')}
             className={clsx(
@@ -102,8 +112,9 @@ export default function App() {
 
       {/* Page content */}
       <div className="flex-1 overflow-hidden">
-        {page === 'notes' && <NotesPage />}
-        {page === 'reminders' && <RemindersPage />}
+        <div className={page !== 'notes' ? 'hidden' : 'h-full'}><NotesPage /></div>
+        <div className={page !== 'reminders' ? 'hidden' : 'h-full'}><RemindersPage /></div>
+        <div className={page !== 'skills' ? 'hidden' : 'h-full'}><SkillsPage /></div>
         {page === 'settings' && (
           <SettingsPage theme={theme} onThemeChange={setTheme} />
         )}

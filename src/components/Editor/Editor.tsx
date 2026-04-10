@@ -19,12 +19,8 @@ import clsx from 'clsx'
 
 const lowlight = createLowlight()
 
-interface EditorProps {
-  onToggleAI: () => void
-}
-
-export function Editor({ onToggleAI }: EditorProps) {
-  const { selectedNote, noteContent, updateNoteContent, updateNoteTitle, isSaving, isLoading } =
+export function Editor() {
+  const { selectedNote, noteContent, updateNoteContent, updateNoteTitle, isSaving, isLoading, forceEditorSync } =
     useNotesStore()
 
   const [title, setTitle] = useState('')
@@ -117,7 +113,7 @@ export function Editor({ onToggleAI }: EditorProps) {
       editor.commands.setContent(noteContent, false)
       setWordCount(calcWords(editor.getText()))
     }
-  }, [selectedNote?.id, isLoading])
+  }, [selectedNote?.id, isLoading, forceEditorSync])
 
   // AI inline autocomplete (debounced on typing pause)
   const autocompleteTimer = useRef<ReturnType<typeof setTimeout>>()
@@ -214,7 +210,7 @@ export function Editor({ onToggleAI }: EditorProps) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-gray-900">
       {/* Toolbar */}
-      <EditorToolbar editor={editor} onToggleAI={onToggleAI} />
+      <EditorToolbar editor={editor} />
 
       {/* Title */}
       <div className="px-10 pt-6 pb-2 flex-shrink-0">

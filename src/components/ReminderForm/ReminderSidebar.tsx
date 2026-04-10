@@ -15,13 +15,12 @@ export function ReminderSidebar() {
     setShowNewListInput(false)
   }
 
-  const todayCount = reminders.filter((r) => {
-    if (r.is_completed) return false
-    if (!r.due_date) return false
-    const now = new Date()
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-    return r.due_date >= start && r.due_date < start + 86400000
-  }).length
+  // 计算今日待办数量（复用与 remindersStore filteredReminders 一致的过滤逻辑）
+  const ONE_DAY_MS = 86_400_000
+  const todayStart = new Date(new Date().setHours(0, 0, 0, 0)).getTime()
+  const todayCount = reminders.filter(
+    (r) => !r.is_completed && r.due_date !== null && r.due_date >= todayStart && r.due_date < todayStart + ONE_DAY_MS,
+  ).length
 
   const allCount = reminders.filter((r) => !r.is_completed).length
   const plannedCount = reminders.filter((r) => !r.is_completed && r.due_date !== null).length

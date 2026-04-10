@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNotesStore } from '../../store/notesStore'
 import { Plus, Pin, Search, Trash2, X, CheckSquare, Square } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
@@ -8,7 +8,8 @@ import type { Note } from '../../types'
 
 export function NoteList() {
   const {
-    filteredNotes,
+    notes: allNotes,
+    selectedFolderId,
     selectedNoteId,
     selectNote,
     createNote,
@@ -18,7 +19,10 @@ export function NoteList() {
     deleteNotes,
     deleteNote,
   } = useNotesStore()
-  const notes = filteredNotes()
+  const notes = useMemo(
+    () => selectedFolderId ? allNotes.filter((n) => n.folder_id === selectedFolderId) : allNotes,
+    [allNotes, selectedFolderId]
+  )
 
   const [contextMenu, setContextMenu] = useState<{ noteId: string; x: number; y: number } | null>(null)
 
@@ -30,7 +34,7 @@ export function NoteList() {
   }, [contextMenu])
 
   return (
-    <div className="w-[280px] flex-shrink-0 h-full border-r border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900">
+    <div className="w-[280px] flex-shrink-0 h-full border-l border-gray-200 dark:border-gray-700 flex flex-col bg-white dark:bg-gray-900">
       {/* Header */}
       {selectedNoteIds.length > 0 ? (
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-800">
